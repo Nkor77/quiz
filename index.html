@@ -99,9 +99,10 @@
     .msg{min-height:24px; font-weight:700}
 
     /* Map */
-    .map-wrap{position:relative; background:#0b1033; border:1px solid #2e367b; border-radius:16px; padding:8px}
+    .map-wrap{position:relative; background:#ffffff; border:1px solid #e7e9ff; border-radius:20px; padding:12px; box-shadow:0 8px 30px rgba(0,0,0,.12)}
     .map svg{width:100%; height:auto; display:block}
-    .state{fill:#29307b; stroke:#10153a; stroke-width:1}
+    .map-title{ text-align:center; font-weight:800; margin:4px 0 8px; color:#1d224d; font-size:clamp(16px,3.5vw,22px);} 
+    .state{stroke:#ffffff; stroke-width:1; stroke-linejoin:round}
     .state.available{cursor:pointer}
     .state:hover{filter:brightness(1.2)}
     .state.correct{fill:#1c9f63}
@@ -186,6 +187,7 @@
 
         <!-- Map Mode View -->
         <div class="map-wrap" id="mapWrap" style="display:block">
+          <div class="map-title">United States Of America</div>
           <div id="map" class="map"></div>
         </div>
 
@@ -199,8 +201,8 @@
   </div>
 
   <!-- Libraries -->
-  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
 
   <script>
   // ---------------------------- Data
@@ -371,32 +373,55 @@
   // ---------------------------- Map Rendering (D3)
   let svg, gStates, gCapitals, projection, path;
 
+  const PASTEL = ['#f7e3ae','#e6f2c2','#d7e7ff','#ffd9e6','#e9d5ff','#c8f7d2','#ffe7c4','#d2f4f9'];
+
+  async function loadUSAtlas(){
+    const urls = [
+      'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json',
+      'https://unpkg.com/us-atlas@3/states-10m.json'
+    ];
+    for(const u of urls){
+      try{ const res = await fetch(u); if(res.ok) return await res.json(); }catch(e){ /* try next */ }
+    }
+    throw new Error('US atlas fetch failed from both CDNs');
+  }
+
   async function initMap(){
-    const width = Math.min(980, document.querySelector('.main').clientWidth - 28);
-    const height = Math.round(width * 0.6);
+    try{
+      const width = Math.min(980, document.querySelector('.main').clientWidth - 28);
+      const height = Math.round(width * 0.6);
 
-    svg = d3.select('#map').append('svg')
-      .attr('viewBox', `0 0 ${width} ${height}`)
-      .attr('preserveAspectRatio', 'xMidYMid meet');
+      svg = d3.select('#map').append('svg')
+        .attr('viewBox', `0 0 ${width} ${height}`)
+        .attr('preserveAspectRatio', 'xMidYMid meet');
 
-    projection = d3.geoAlbersUsa().translate([width/2, height/2]).scale(width*1.2);
-    path = d3.geoPath(projection);
+      projection = d3.geoAlbersUsa().translate([width/2, height/2]).scale(width*1.2);
+      path = d3.geoPath(projection);
 
-    const us = await fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json').then(r=>r.json());
-    const states = topojson.feature(us, us.objects.states).features;
+      if(typeof topojson === 'undefined') throw new Error('TopoJSON library did not load.');
+      const us = await loadUSAtlas();
+      const states = topojson.feature(us, us.objects.states).features;
 
-    gStates = svg.append('g');
-    gStates.selectAll('path').data(states)
-      .join('path')
-      .attr('class','state')
-      .attr('data-fips', d=>String(d.id).padStart(2,'0'))
-      .attr('d', path);
+      gStates = svg.append('g');
+      gStates.selectAll('path').data(states)
+        .join('path')
+        .attr('class','state')
+        .attr('data-fips', d=>String(d.id).padStart(2,'0'))
+        .attr('d', path)
+        .attr('fill', (d,i)=> PASTEL[i % PASTEL.length])
+        .attr('stroke', '#ffffff')
+        .attr('stroke-width', 1);
 
-    // Capitals layer
-    gCapitals = svg.append('g');
-    redrawCapitals();
+      // Capitals layer
+      gCapitals = svg.append('g');
+      redrawCapitals();
 
-    renderMapInteractivity();
+      renderMapInteractivity();
+    }catch(err){
+      console.error(err);
+      els.prompt.textContent = 'Map failed to load (blocked library or network). Host this file on GitHub Pages or allow cdn.jsdelivr.net/unpkg.com.';
+      els.msg.textContent = '';
+    }
   }
 
   function redrawCapitals(){
