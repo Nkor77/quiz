@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>U.S. States & Capitals — Study Games</title>
+  <!--
+    ✅ Single-file site. Just copy this into index.html and host on GitHub Pages / any static host.
+    ✅ No backend. Uses open libraries (D3 + TopoJSON + us-atlas) from public CDNs.
+    ✅ Two game modes (Map / Multiple-Choice) and two game types (States / Capitals).
+    ✅ Region & per-item selection, search, scoring, reset/shuffle/restart, smooth transitions.
+
+    Tips:
+    - Put this file in a GitHub repo (public) as index.html → Settings → Pages → deploy from main.
+    - If embedding in Google Sites, use “Embed → Embed code” and paste the whole HTML if allowed,
+      or host this file somewhere public and embed the URL.
+  -->
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <style>
+    :root{
+      --bg: #0f1226;
+      --panel: #191f45;
+      --panel-2: #23295e;
+      --accent: #7c5cff;
+      --accent-2: #21d4fd;
+      --good: #17c964;
+      --bad: #ff4d4f;
+      --text: #f3f5ff;
+      --muted: #c3c7ff;
+      --chip: #2a3070;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background: radial-gradient(1200px 800px at 20% -10%, #1b1e44 0%, #0f1226 40%) no-repeat, var(--bg);
+      color:var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+    .app{
+      max-width:1200px; margin:0 auto; padding:16px 16px 120px; display:flex; flex-direction:column; gap:14px;
+    }
+    header{
+      display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:16px; border-radius:18px; background:linear-gradient(135deg,var(--panel),#11163a 55%, var(--panel-2)); box-shadow: 0 12px 40px rgba(0,0,0,.35);
+    }
+    .brand{display:flex; align-items:center; gap:12px}
+    .logo{
+      width:44px; height:44px; border-radius:12px; background: conic-gradient(from 180deg, var(--accent), var(--accent-2), #ff7edb, var(--accent));
+      box-shadow:0 6px 20px rgba(124,92,255,.45) inset, 0 2px 10px rgba(33,212,253,.35);
+    }
+    h1{font-size: clamp(18px, 4.2vw, 24px); margin:0; letter-spacing:.3px}
+    .subtitle{color:var(--muted); font-size:13px; margin-top:2px}
+
+    .toolbar{display:flex; flex-wrap:wrap; gap:8px}
+    .pill{
+      display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px; background:var(--chip); color:var(--text); border:1px solid #3740a5;
+    }
+    .pill input[type="radio"], .pill input[type="checkbox"]{accent-color: var(--accent)}
+
+    .layout{display:grid; grid-template-columns: 320px 1fr; gap:14px}
+    @media (max-width: 950px){.layout{grid-template-columns: 1fr}}
+
+    /* Left Panel */
+    .panel{
+      background:linear-gradient(180deg, var(--panel), #0f1440); border:1px solid #2d3471; border-radius:18px; padding:14px; display:flex; flex-direction:column; gap:12px;
+    }
+    .panel h2{font-size:15px; margin:2px 0 0 0; color:#dfe2ff}
+    .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+    .row label{font-size:13px}
+    .selects{display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:8px}
+
+    .search{position:relative}
+    .search input{width:100%; padding:10px 12px 10px 36px; border-radius:12px; border:1px solid #3b4492; background:#0f1440; color:var(--text)}
+    .search svg{position:absolute; left:10px; top:50%; transform:translateY(-50%); opacity:.8}
+
+    .list{
+      max-height:320px; overflow:auto; border:1px solid #2e367b; border-radius:14px; padding:8px; background:#0b1033;
+    }
+    .list .item{display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:10px}
+    .list .item:hover{background:#161c52}
+    .muted{color:#9aa3ff}
+    .tiny{font-size:12px}
+
+    .buttons{display:flex; flex-wrap:wrap; gap:8px}
+    button{
+      appearance:none; border:none; border-radius:12px; padding:10px 14px; background:linear-gradient(135deg, var(--accent) 0%, #5c9eff 100%);
+      color:#0b0e2b; font-weight:700; box-shadow: 0 8px 20px rgba(124,92,255,.3); cursor:pointer; transition: transform .08s ease, box-shadow .2s ease;
+    }
+    button.secondary{background:linear-gradient(135deg,#2b3275,#3f48a8); color:#e8eaff; box-shadow: none; border:1px solid #4750be}
+    button.ghost{background:#0f1440; color:#e2e5ff; border:1px dashed #4750be}
+    button:active{transform:translateY(1px)}
+
+    /* Main Panel */
+    .main{
+      background:linear-gradient(180deg, #0f1440, #0a0d27); border:1px solid #2d3471; border-radius:18px; padding:14px; display:flex; flex-direction:column; gap:12px; min-height:480px;
+    }
+    .stats{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+    .counter{padding:8px 12px; border-radius:12px; background:#0e153f; border:1px solid #3740a5; font-weight:700}
+    .good{color:var(--good)}.bad{color:var(--bad)}
+    .prompt{font-size: clamp(16px, 4vw, 22px); font-weight:800; letter-spacing:.3px}
+    .msg{min-height:24px; font-weight:700}
+
+    /* Map */
+    .map-wrap{position:relative; background:#0b1033; border:1px solid #2e367b; border-radius:16px; padding:8px}
+    .map svg{width:100%; height:auto; display:block}
+    .state{fill:#29307b; stroke:#10153a; stroke-width:1}
+    .state.available{cursor:pointer}
+    .state:hover{filter:brightness(1.2)}
+    .state.correct{fill:#1c9f63}
+    .state.wrong{fill:#a33a3a}
+    .capital{fill:#f0f3ff; stroke:#0a0d27; stroke-width:1; opacity:.9}
+    .capital.available{cursor:pointer}
+    .capital.correct{fill:#1c9f63}
+    .capital.wrong{fill:#ff4d4f}
+    .pulse{animation:pulse .6s ease}
+    @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.06)}100%{transform:scale(1)}}
+
+    /* MCQ */
+    .card{background:#0b1033; border:1px solid #2e367b; border-radius:16px; padding:14px}
+    .choices{display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:10px}
+    .choice{padding:12px; border-radius:12px; background:#12174a; border:1px solid #3943a8; cursor:pointer; font-weight:700; text-align:center; transition:transform .05s ease}
+    .choice:hover{filter:brightness(1.15)}
+    .choice:active{transform:translateY(1px)}
+    .choice.right{outline:3px solid var(--good)}
+    .choice.wrong{outline:3px solid var(--bad)}
+
+    .footer-note{color:#9aa3ff; font-size:12px; opacity:.9}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <div class="logo" aria-hidden="true"></div>
+        <div>
+          <h1>U.S. States & Capitals — Study Games</h1>
+          <div class="subtitle">Two game types (States / Capitals), two modes (Map / Multiple‑Choice), filters, search, and scoring.</div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <label class="pill"><input type="radio" name="mode" value="map" checked> Map Mode</label>
+        <label class="pill"><input type="radio" name="mode" value="mcq"> Multiple‑Choice Mode</label>
+        <label class="pill"><input type="radio" name="kind" value="states" checked> States Game</label>
+        <label class="pill"><input type="radio" name="kind" value="capitals"> Capitals Game</label>
+      </div>
+    </header>
+
+    <div class="layout">
+      <!-- LEFT CONTROL PANEL -->
+      <aside class="panel" id="controls">
+        <h2>Selection & Regions</h2>
+        <div class="row selects">
+          <label class="pill"><input type="checkbox" class="region" value="Northeast" checked> Northeast</label>
+          <label class="pill"><input type="checkbox" class="region" value="Midwest" checked> Midwest</label>
+          <label class="pill"><input type="checkbox" class="region" value="South" checked> South</label>
+          <label class="pill"><input type="checkbox" class="region" value="West" checked> West</label>
+        </div>
+        <div class="row buttons">
+          <button class="secondary" id="selectAll">Select all</button>
+          <button class="secondary" id="clearAll">Clear all</button>
+        </div>
+
+        <div class="search">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15Z" stroke="#b9c2ff" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="search" type="text" placeholder="Search state or capital..." />
+        </div>
+        <div class="list" id="list"></div>
+
+        <div class="row buttons">
+          <button id="apply" title="Apply selection & restart">Apply selection</button>
+          <button class="ghost" id="shuffle">Shuffle</button>
+          <button class="ghost" id="restart">Restart</button>
+          <button class="ghost" id="reset">Reset counters</button>
+        </div>
+        <div class="footer-note tiny">Tip: switch between <b>Map</b> and <b>Multiple‑Choice</b> at the top. Filters apply to both games.</div>
+      </aside>
+
+      <!-- MAIN PLAY AREA -->
+      <main class="main">
+        <div class="stats">
+          <div class="counter" id="score">Correct 0 / 0</div>
+          <div class="counter" id="attempts">Attempts 0</div>
+          <div class="counter" id="pool">Active pool: 0</div>
+        </div>
+
+        <div class="prompt" id="prompt">Loading map…</div>
+        <div class="msg" id="msg"></div>
+
+        <!-- Map Mode View -->
+        <div class="map-wrap" id="mapWrap" style="display:block">
+          <div id="map" class="map"></div>
+        </div>
+
+        <!-- MCQ View -->
+        <div class="card" id="mcqWrap" style="display:none">
+          <div class="prompt" id="mcqQ">Question</div>
+          <div class="choices" id="choices"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+
+  <script>
+  // ---------------------------- Data
+  const STATES = [
+    {name:"Alabama",abbr:"AL",capital:"Montgomery",lat:32.377716,lon:-86.300568,region:"South",fips:"01"},
+    {name:"Alaska",abbr:"AK",capital:"Juneau",lat:58.301598,lon:-134.420212,region:"West",fips:"02"},
+    {name:"Arizona",abbr:"AZ",capital:"Phoenix",lat:33.448143,lon:-112.096962,region:"West",fips:"04"},
+    {name:"Arkansas",abbr:"AR",capital:"Little Rock",lat:34.746613,lon:-92.288986,region:"South",fips:"05"},
+    {name:"California",abbr:"CA",capital:"Sacramento",lat:38.576668,lon:-121.493629,region:"West",fips:"06"},
+    {name:"Colorado",abbr:"CO",capital:"Denver",lat:39.739227,lon:-104.984856,region:"West",fips:"08"},
+    {name:"Connecticut",abbr:"CT",capital:"Hartford",lat:41.764046,lon:-72.682198,region:"Northeast",fips:"09"},
+    {name:"Delaware",abbr:"DE",capital:"Dover",lat:39.157307,lon:-75.519722,region:"South",fips:"10"},
+    {name:"Florida",abbr:"FL",capital:"Tallahassee",lat:30.438118,lon:-84.281296,region:"South",fips:"12"},
+    {name:"Georgia",abbr:"GA",capital:"Atlanta",lat:33.749027,lon:-84.388229,region:"South",fips:"13"},
+    {name:"Hawaii",abbr:"HI",capital:"Honolulu",lat:21.307442,lon:-157.857376,region:"West",fips:"15"},
+    {name:"Idaho",abbr:"ID",capital:"Boise",lat:43.617775,lon:-116.199722,region:"West",fips:"16"},
+    {name:"Illinois",abbr:"IL",capital:"Springfield",lat:39.798363,lon:-89.654961,region:"Midwest",fips:"17"},
+    {name:"Indiana",abbr:"IN",capital:"Indianapolis",lat:39.768623,lon:-86.162643,region:"Midwest",fips:"18"},
+    {name:"Iowa",abbr:"IA",capital:"Des Moines",lat:41.591087,lon:-93.603729,region:"Midwest",fips:"19"},
+    {name:"Kansas",abbr:"KS",capital:"Topeka",lat:39.048191,lon:-95.677956,region:"Midwest",fips:"20"},
+    {name:"Kentucky",abbr:"KY",capital:"Frankfort",lat:38.186722,lon:-84.875374,region:"South",fips:"21"},
+    {name:"Louisiana",abbr:"LA",capital:"Baton Rouge",lat:30.457069,lon:-91.187393,region:"South",fips:"22"},
+    {name:"Maine",abbr:"ME",capital:"Augusta",lat:44.307167,lon:-69.781693,region:"Northeast",fips:"23"},
+    {name:"Maryland",abbr:"MD",capital:"Annapolis",lat:38.978764,lon:-76.490936,region:"South",fips:"24"},
+    {name:"Massachusetts",abbr:"MA",capital:"Boston",lat:42.358162,lon:-71.063698,region:"Northeast",fips:"25"},
+    {name:"Michigan",abbr:"MI",capital:"Lansing",lat:42.733635,lon:-84.555328,region:"Midwest",fips:"26"},
+    {name:"Minnesota",abbr:"MN",capital:"Saint Paul",lat:44.955097,lon:-93.102211,region:"Midwest",fips:"27"},
+    {name:"Mississippi",abbr:"MS",capital:"Jackson",lat:32.303848,lon:-90.182106,region:"South",fips:"28"},
+    {name:"Missouri",abbr:"MO",capital:"Jefferson City",lat:38.579201,lon:-92.172935,region:"Midwest",fips:"29"},
+    {name:"Montana",abbr:"MT",capital:"Helena",lat:46.585709,lon:-112.018417,region:"West",fips:"30"},
+    {name:"Nebraska",abbr:"NE",capital:"Lincoln",lat:40.808075,lon:-96.699654,region:"Midwest",fips:"31"},
+    {name:"Nevada",abbr:"NV",capital:"Carson City",lat:39.163914,lon:-119.766121,region:"West",fips:"32"},
+    {name:"New Hampshire",abbr:"NH",capital:"Concord",lat:43.206898,lon:-71.537994,region:"Northeast",fips:"33"},
+    {name:"New Jersey",abbr:"NJ",capital:"Trenton",lat:40.220596,lon:-74.769913,region:"Northeast",fips:"34"},
+    {name:"New Mexico",abbr:"NM",capital:"Santa Fe",lat:35.686975,lon:-105.937799,region:"West",fips:"35"},
+    {name:"New York",abbr:"NY",capital:"Albany",lat:42.652843,lon:-73.757874,region:"Northeast",fips:"36"},
+    {name:"North Carolina",abbr:"NC",capital:"Raleigh",lat:35.78043,lon:-78.639099,region:"South",fips:"37"},
+    {name:"North Dakota",abbr:"ND",capital:"Bismarck",lat:46.82085,lon:-100.783318,region:"Midwest",fips:"38"},
+    {name:"Ohio",abbr:"OH",capital:"Columbus",lat:39.961346,lon:-82.999069,region:"Midwest",fips:"39"},
+    {name:"Oklahoma",abbr:"OK",capital:"Oklahoma City",lat:35.46756,lon:-97.516428,region:"South",fips:"40"},
+    {name:"Oregon",abbr:"OR",capital:"Salem",lat:44.938461,lon:-123.030403,region:"West",fips:"41"},
+    {name:"Pennsylvania",abbr:"PA",capital:"Harrisburg",lat:40.264378,lon:-76.883598,region:"Northeast",fips:"42"},
+    {name:"Rhode Island",abbr:"RI",capital:"Providence",lat:41.830914,lon:-71.414963,region:"Northeast",fips:"44"},
+    {name:"South Carolina",abbr:"SC",capital:"Columbia",lat:34.000343,lon:-81.033211,region:"South",fips:"45"},
+    {name:"South Dakota",abbr:"SD",capital:"Pierre",lat:44.367031,lon:-100.346405,region:"Midwest",fips:"46"},
+    {name:"Tennessee",abbr:"TN",capital:"Nashville",lat:36.162663,lon:-86.781601,region:"South",fips:"47"},
+    {name:"Texas",abbr:"TX",capital:"Austin",lat:30.27467,lon:-97.740349,region:"South",fips:"48"},
+    {name:"Utah",abbr:"UT",capital:"Salt Lake City",lat:40.777477,lon:-111.888237,region:"West",fips:"49"},
+    {name:"Vermont",abbr:"VT",capital:"Montpelier",lat:44.262436,lon:-72.580536,region:"Northeast",fips:"50"},
+    {name:"Virginia",abbr:"VA",capital:"Richmond",lat:37.538857,lon:-77.43364,region:"South",fips:"51"},
+    {name:"Washington",abbr:"WA",capital:"Olympia",lat:47.035805,lon:-122.905014,region:"West",fips:"53"},
+    {name:"West Virginia",abbr:"WV",capital:"Charleston",lat:38.336246,lon:-81.612328,region:"South",fips:"54"},
+    {name:"Wisconsin",abbr:"WI",capital:"Madison",lat:43.074684,lon:-89.384445,region:"Midwest",fips:"55"},
+    {name:"Wyoming",abbr:"WY",capital:"Cheyenne",lat:41.140259,lon:-104.820236,region:"West",fips:"56"},
+  ];
+
+  const FIPS_TO_ABBR = Object.fromEntries(STATES.map(s => [s.fips, s.abbr]));
+  const ABBR_TO_STATE = Object.fromEntries(STATES.map(s => [s.abbr, s]));
+
+  // ---------------------------- State
+  const state = {
+    mode: 'map',       // 'map' | 'mcq'
+    kind: 'states',    // 'states' | 'capitals'
+    pool: [...STATES.map(s=>s.abbr)], // active items by abbr
+    order: [],         // shuffled order of questions (abbrs)
+    idx: 0,            // current index in order
+    correct: 0,
+    attempts: 0,
+  };
+
+  const els = {
+    score: document.getElementById('score'),
+    attempts: document.getElementById('attempts'),
+    pool: document.getElementById('pool'),
+    prompt: document.getElementById('prompt'),
+    msg: document.getElementById('msg'),
+    mapWrap: document.getElementById('mapWrap'),
+    map: document.getElementById('map'),
+    mcqWrap: document.getElementById('mcqWrap'),
+    mcqQ: document.getElementById('mcqQ'),
+    choices: document.getElementById('choices'),
+    list: document.getElementById('list'),
+    search: document.getElementById('search'),
+  };
+
+  // ---------------------------- Helpers
+  const shuffle = a => a.map(v => [Math.random(), v]).sort((x,y) => x[0]-y[0]).map(([_,v])=>v);
+  const fmtPoolCount = () => els.pool.textContent = `Active pool: ${state.pool.length}`;
+  const setScore = () => {
+    els.score.textContent = `Correct ${state.correct} / ${state.pool.length}`;
+    els.attempts.textContent = `Attempts ${state.attempts}`;
+  };
+  const currentItem = () => ABBR_TO_STATE[state.order[state.idx]];
+  const inPool = (abbr) => state.pool.includes(abbr);
+
+  const filteredItems = () => {
+    const q = els.search.value.trim().toLowerCase();
+    if(!q) return STATES;
+    return STATES.filter(s => s.name.toLowerCase().includes(q) || s.capital.toLowerCase().includes(q) || s.abbr.toLowerCase().includes(q));
+  };
+
+  function buildList(){
+    const items = filteredItems();
+    els.list.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for(const s of items){
+      const row = document.createElement('div');
+      row.className = 'item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = inPool(s.abbr);
+      cb.addEventListener('change', () => {
+        if(cb.checked){ if(!inPool(s.abbr)) state.pool.push(s.abbr); }
+        else{ state.pool = state.pool.filter(x => x!==s.abbr); }
+        fmtPoolCount();
+      });
+      const label = document.createElement('div');
+      label.innerHTML = `<b>${s.name}</b> <span class="muted">(${s.abbr})</span><br><span class="tiny muted">Capital: ${s.capital} • ${s.region}</span>`;
+      row.appendChild(cb); row.appendChild(label);
+      frag.appendChild(row);
+    }
+    els.list.appendChild(frag);
+  }
+
+  function applyRegions(){
+    const regions = [...document.querySelectorAll('.region:checked')].map(x=>x.value);
+    state.pool = STATES.filter(s => regions.includes(s.region)).map(s=>s.abbr);
+    buildList();
+    fmtPoolCount();
+  }
+
+  function restart(shuffleOrder=true){
+    if(state.pool.length === 0){
+      els.prompt.textContent = 'Select at least one state/capital to start.';
+      els.msg.textContent = '';
+      renderMapInteractivity();
+      renderMCQ(true);
+      setScore();
+      return;
+    }
+    state.order = shuffleOrder ? shuffle([...state.pool]) : [...state.pool];
+    state.idx = 0;
+    els.msg.textContent = '';
+    setScore();
+    updatePrompt();
+    renderMapInteractivity();
+    if(state.mode==='mcq') renderMCQ();
+  }
+
+  function resetCounters(){
+    state.correct = 0; state.attempts = 0; setScore();
+  }
+
+  function updatePrompt(){
+    if(state.pool.length===0){ els.prompt.textContent = 'No items in pool.'; return; }
+    const item = currentItem();
+    let text = '';
+    if(state.mode==='map'){
+      if(state.kind==='states') text = `Click the state: ${item.name} (${item.abbr})`;
+      else text = `Click the capital: ${item.capital}`;
+    }else{ // mcq
+      if(state.kind==='states') text = `Which state has the capital “${item.capital}”?`;
+      else text = `What is the capital of ${item.name}?`;
+    }
+    els.prompt.textContent = text;
+    els.prompt.classList.add('pulse'); setTimeout(()=>els.prompt.classList.remove('pulse'), 400);
+  }
+
+  // ---------------------------- Map Rendering (D3)
+  let svg, gStates, gCapitals, projection, path;
+
+  async function initMap(){
+    const width = Math.min(980, document.querySelector('.main').clientWidth - 28);
+    const height = Math.round(width * 0.6);
+
+    svg = d3.select('#map').append('svg')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('preserveAspectRatio', 'xMidYMid meet');
+
+    projection = d3.geoAlbersUsa().translate([width/2, height/2]).scale(width*1.2);
+    path = d3.geoPath(projection);
+
+    const us = await fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json').then(r=>r.json());
+    const states = topojson.feature(us, us.objects.states).features;
+
+    gStates = svg.append('g');
+    gStates.selectAll('path').data(states)
+      .join('path')
+      .attr('class','state')
+      .attr('data-fips', d=>String(d.id).padStart(2,'0'))
+      .attr('d', path);
+
+    // Capitals layer
+    gCapitals = svg.append('g');
+    redrawCapitals();
+
+    renderMapInteractivity();
+  }
+
+  function redrawCapitals(){
+    if(!gCapitals) return;
+    const pts = gCapitals.selectAll('circle').data(STATES, d=>d.abbr);
+    pts.join(
+      enter => enter.append('circle')
+        .attr('r', 5)
+        .attr('class','capital')
+        .attr('cx', d=> projection([d.lon,d.lat]) ? projection([d.lon,d.lat])[0] : -10)
+        .attr('cy', d=> projection([d.lon,d.lat]) ? projection([d.lon,d.lat])[1] : -10),
+      update => update
+        .attr('cx', d=> projection([d.lon,d.lat]) ? projection([d.lon,d.lat])[0] : -10)
+        .attr('cy', d=> projection([d.lon,d.lat]) ? projection([d.lon,d.lat])[1] : -10)
+    );
+  }
+
+  function renderMapInteractivity(){
+    if(!gStates) return;
+
+    const isMap = state.mode==='map';
+    document.getElementById('mapWrap').style.display = isMap ? 'block' : 'none';
+
+    const statePaths = gStates.selectAll('path');
+    const capitalDots = gCapitals.selectAll('circle');
+
+    // Reset classes
+    statePaths.attr('class','state');
+    capitalDots.attr('class','capital');
+
+    if(state.kind==='states'){
+      // States mode → states clickable, capitals not
+      statePaths.classed('available', d => state.pool.includes(FIPS_TO_ABBR[String(d.id).padStart(2,'0')]))
+        .on('click', (event, d) => {
+          if(!isMap) return; // ignore when not in map mode
+          const abbr = FIPS_TO_ABBR[String(d.id).padStart(2,'0')];
+          if(!state.pool.includes(abbr)) return;
+          handleMapClick(abbr, d3.select(event.currentTarget));
+        });
+      capitalDots.classed('available', false).on('click', null);
+    }else{
+      // Capitals mode → capitals clickable, states not
+      capitalDots.classed('available', d => state.pool.includes(d.abbr))
+        .on('click', (event, d) => {
+          if(!isMap) return; // ignore when not in map mode
+          const abbr = d.abbr;
+          if(!state.pool.includes(abbr)) return;
+          handleMapClick(abbr, d3.select(event.currentTarget));
+        });
+      statePaths.classed('available', false).on('click', null);
+    }
+
+    // Show/hide capitals layer visibility depending on mode
+    gCapitals.attr('display', state.kind==='capitals' ? null : 'none');
+  }
+
+  function handleMapClick(clickedAbbr, selection){
+    state.attempts++;
+    const target = currentItem();
+    if(clickedAbbr === target.abbr){
+      state.correct++;
+      els.msg.textContent = 'Correct!'; els.msg.className = 'msg good';
+      selection.classed('correct', true);
+      nextQuestion();
+    } else {
+      els.msg.textContent = 'Incorrect, try again.'; els.msg.className = 'msg bad';
+      selection.classed('wrong', true);
+      setTimeout(()=> selection.classed('wrong', false), 700);
+    }
+    setScore();
+  }
+
+  function nextQuestion(){
+    state.idx++;
+    if(state.idx >= state.order.length){
+      // Finished
+      els.prompt.textContent = `Great job! You finished ${state.kind==='states'? 'States':'Capitals'} — ${state.mode==='map'?'Map':'Multiple‑Choice'} mode.`;
+      els.msg.textContent = '';
+      state.idx = 0; // loop
+      state.order = shuffle([...state.pool]);
+      return;
+    }
+    updatePrompt();
+    if(state.mode==='mcq') renderMCQ();
+  }
+
+  // ---------------------------- Multiple Choice
+  function makeChoices(correct, n=4){
+    const pool = state.pool.filter(a => a!==correct.abbr);
+    const wrongs = shuffle(pool).slice(0, n-1).map(ab => ABBR_TO_STATE[ab]);
+    const arr = shuffle([correct, ...wrongs]);
+    return arr;
+  }
+
+  function renderMCQ(empty=false){
+    const show = state.mode==='mcq';
+    document.getElementById('mcqWrap').style.display = show ? 'block' : 'none';
+    if(!show) return;
+
+    if(empty || state.pool.length===0){
+      els.mcqQ.textContent = 'No items selected.';
+      els.choices.innerHTML='';
+      return;
+    }
+
+    const item = currentItem();
+    const choices = makeChoices(item, 4);
+    els.choices.innerHTML = '';
+
+    if(state.kind==='states'){
+      // Q: Which state has the capital “X”?
+      els.mcqQ.textContent = `Which state has the capital “${item.capital}”?`;
+      for(const c of choices){
+        const div = document.createElement('div');
+        div.className = 'choice';
+        div.textContent = c.name;
+        div.onclick = () => {
+          state.attempts++;
+          if(c.abbr===item.abbr){
+            state.correct++; div.classList.add('right');
+            els.msg.textContent = 'Correct!'; els.msg.className = 'msg good';
+            setScore(); setTimeout(nextQuestion, 250);
+          } else {
+            div.classList.add('wrong');
+            els.msg.textContent = 'Incorrect, try again.'; els.msg.className = 'msg bad';
+            setScore(); setTimeout(()=>div.classList.remove('wrong'), 500);
+          }
+        };
+        els.choices.appendChild(div);
+      }
+    } else {
+      // Capitals game → Q: What is the capital of State?
+      els.mcqQ.textContent = `What is the capital of ${item.name}?`;
+      for(const c of choices){
+        const div = document.createElement('div');
+        div.className = 'choice';
+        div.textContent = c.capital;
+        div.onclick = () => {
+          state.attempts++;
+          if(c.abbr===item.abbr){
+            state.correct++; div.classList.add('right');
+            els.msg.textContent = 'Correct!'; els.msg.className = 'msg good';
+            setScore(); setTimeout(nextQuestion, 250);
+          } else {
+            div.classList.add('wrong');
+            els.msg.textContent = 'Incorrect, try again.'; els.msg.className = 'msg bad';
+            setScore(); setTimeout(()=>div.classList.remove('wrong'), 500);
+          }
+        };
+        els.choices.appendChild(div);
+      }
+    }
+  }
+
+  // ---------------------------- Events / Wiring
+  function wireUI(){
+    document.querySelectorAll('input[name="mode"]').forEach(el=>{
+      el.addEventListener('change', e=>{
+        state.mode = e.target.value; els.msg.textContent='';
+        updatePrompt(); renderMapInteractivity(); renderMCQ();
+      });
+    });
+    document.querySelectorAll('input[name="kind"]').forEach(el=>{
+      el.addEventListener('change', e=>{
+        state.kind = e.target.value; els.msg.textContent='';
+        updatePrompt(); renderMapInteractivity(); renderMCQ();
+      });
+    });
+
+    document.getElementById('apply').onclick = () => { restart(true); };
+    document.getElementById('shuffle').onclick = () => { state.order = shuffle([...state.pool]); state.idx = 0; updatePrompt(); if(state.mode==='mcq') renderMCQ(); };
+    document.getElementById('restart').onclick = () => { restart(false); };
+    document.getElementById('reset').onclick = () => { resetCounters(); };
+
+    document.getElementById('selectAll').onclick = () => { state.pool = [...STATES.map(s=>s.abbr)]; buildList(); fmtPoolCount(); };
+    document.getElementById('clearAll').onclick = () => { state.pool = []; buildList(); fmtPoolCount(); };
+    document.querySelectorAll('.region').forEach(c=> c.addEventListener('change', applyRegions));
+
+    els.search.addEventListener('input', buildList);
+  }
+
+  // ---------------------------- Kickoff
+  (async function init(){
+    // Initial UI
+    wireUI();
+    buildList();
+    fmtPoolCount();
+    resetCounters();
+    updatePrompt();
+
+    // Build map
+    await initMap();
+
+    // Start order
+    restart(true);
+
+    // Handle responsiveness (redraw capitals positions on resize)
+    let to;
+    window.addEventListener('resize', ()=>{
+      clearTimeout(to);
+      to = setTimeout(()=>{
+        // Rebuild map SVG to recompute projection & sizes
+        d3.select('#map').selectAll('*').remove();
+        svg = null; gStates=null; gCapitals=null; projection=null; path=null;
+        initMap().then(()=> renderMapInteractivity());
+      }, 200);
+    });
+  })();
+  </script>
+</body>
+</html>
