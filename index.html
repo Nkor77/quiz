@@ -201,8 +201,10 @@
   </div>
 
   <!-- Libraries -->
-  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/index.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/map.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/geodata/usaLow.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/themes/Animated.js"></script>
 
   <script>
   // ---------------------------- Data
@@ -370,142 +372,96 @@
     els.prompt.classList.add('pulse'); setTimeout(()=>els.prompt.classList.remove('pulse'), 400);
   }
 
-  // ---------------------------- Map Rendering (D3)
-  let svg, gStates, gCapitals, projection, path;
+  // ---------------------------- Map Rendering (amCharts 5)
+  let am5Root, mapChart, polygonSeries, pointSeries;
 
-  const PASTEL = ['#f7e3ae','#e6f2c2','#d7e7ff','#ffd9e6','#e9d5ff','#c8f7d2','#ffe7c4','#d2f4f9'];
+  function initMap(){
+    // Dispose existing
+    if(am5Root){ am5Root.dispose(); }
 
-  async function loadUSAtlas(){
-    const urls = [
-      'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json',
-      'https://unpkg.com/us-atlas@3/states-10m.json'
-    ];
-    for(const u of urls){
-      try{ const res = await fetch(u); if(res.ok) return await res.json(); }catch(e){ /* try next */ }
-    }
-    throw new Error('US atlas fetch failed from both CDNs');
-  }
+    am5Root = am5.Root.new('map');
+    am5Root.setThemes([ am5themes_Animated.new(am5Root) ]);
 
-  async function initMap(){
-    try{
-      const width = Math.min(980, document.querySelector('.main').clientWidth - 28);
-      const height = Math.round(width * 0.6);
-
-      svg = d3.select('#map').append('svg')
-        .attr('viewBox', `0 0 ${width} ${height}`)
-        .attr('preserveAspectRatio', 'xMidYMid meet');
-
-      projection = d3.geoAlbersUsa().translate([width/2, height/2]).scale(width*1.2);
-      path = d3.geoPath(projection);
-
-      if(typeof topojson === 'undefined') throw new Error('TopoJSON library did not load.');
-      const us = await loadUSAtlas();
-      const states = topojson.feature(us, us.objects.states).features;
-
-      gStates = svg.append('g');
-      gStates.selectAll('path').data(states)
-        .join('path')
-        .attr('class','state')
-        .attr('data-fips', d=>String(d.id).padStart(2,'0'))
-        .attr('d', path)
-        .attr('fill', (d,i)=> PASTEL[i % PASTEL.length])
-        .attr('stroke', '#ffffff')
-        .attr('stroke-width', 1);
-
-      // Capitals layer
-      gCapitals = svg.append('g');
-      redrawCapitals();
-
-      renderMapInteractivity();
-    }catch(err){
-      console.error(err);
-      els.prompt.textContent = 'Map failed to load (blocked library or network). Host this file on GitHub Pages or allow cdn.jsdelivr.net/unpkg.com.';
-      els.msg.textContent = '';
-    }
-  }
-
-  function redrawCapitals(){
-    if(!gCapitals) return;
-    const pts = gCapitals.selectAll('circle').data(STATES, d=>d.abbr);
-    pts.join(
-      enter => enter.append('circle')
-        .attr('r', 5)
-        .attr('class','capital')
-        .attr('cx', d=> projection([d.lon,d.lat]) ? projection([d.lon,d.lat])[0] : -10)
-        .attr('cy', d=> projection([d.lon,d.lat]) ? projection([d.lon,d.lat])[1] : -10),
-      update => update
-        .attr('cx', d=> projection([d.lon,d.lat]) ? projection([d.lon,d.lat])[0] : -10)
-        .attr('cy', d=> projection([d.lon,d.lat]) ? projection([d.lon,d.lat])[1] : -10)
+    mapChart = am5Root.container.children.push(
+      am5map.MapChart.new(am5Root, {
+        panX: 'none', panY: 'none', wheelX: 'none', wheelY: 'none',
+        projection: am5map.geoAlbersUsa()
+      })
     );
+
+    // STATES polygons
+    polygonSeries = mapChart.series.push(
+      am5map.MapPolygonSeries.new(am5Root, {
+        geoJSON: am5geodata_usaLow,
+        valueField: 'value'
+      })
+    );
+
+    polygonSeries.mapPolygons.template.setAll({
+      tooltipText: '{name}',
+      interactive: true,
+      fillOpacity: 1
+    });
+
+    // Pastel fill per state
+    const fillColors = ['#f7e3ae','#e6f2c2','#d7e7ff','#ffd9e6','#e9d5ff','#c8f7d2','#ffe7c4','#d2f4f9'];
+    let colorIdx = 0;
+    polygonSeries.mapPolygons.template.adapters.add('fill', () => am5.color(fillColors[(colorIdx++) % fillColors.length]));
+
+    polygonSeries.mapPolygons.template.events.on('click', ev => {
+      if(state.mode !== 'map' || state.kind !== 'states') return;
+      const id = ev.target.dataItem.get('id'); // e.g., US-CA
+      const abbr = id?.slice(3);
+      if(!abbr || !state.pool.includes(abbr)) return;
+      handleMapClick(abbr, null);
+      // visual feedback
+      ev.target.set('stroke', am5.color(0xffffff));
+      ev.target.animate({ key: 'fill', to: am5.color('#17c964'), duration: 300 });
+    });
+
+    // CAPITAL markers
+    pointSeries = mapChart.series.push(
+      am5map.MapPointSeries.new(am5Root, {})
+    );
+
+    pointSeries.bullets.push(() => {
+      const circle = am5.Circle.new(am5Root, { radius: 6, fill: am5.color(0xffffff), stroke: am5.color(0x0a0d27), strokeWidth: 1 });
+      circle.states.create('correct', { fill: am5.color(0x17c964) });
+      circle.states.create('wrong', { fill: am5.color(0xff4d4f) });
+      circle.events.on('click', ev => {
+        if(state.mode !== 'map' || state.kind !== 'capitals') return;
+        const abbr = ev.target.dataItem?.dataContext?.abbr;
+        if(!abbr || !state.pool.includes(abbr)) return;
+        handleMapClick(abbr, null);
+      });
+      return am5.Bullet.new(am5Root, { sprite: circle });
+    });
+
+    pointSeries.data.setAll(STATES.map(s => ({
+      id: 'PT-' + s.abbr, name: s.capital, abbr: s.abbr, longitude: s.lon, latitude: s.lat
+    })));
+
+    renderMapInteractivity();
   }
 
   function renderMapInteractivity(){
-    if(!gStates) return;
+    // Toggle series by game kind
+    if(!polygonSeries || !pointSeries) return;
+    polygonSeries.set('visible', state.kind === 'states');
+    pointSeries.set('visible', state.kind === 'capitals');
 
-    const isMap = state.mode==='map';
-    document.getElementById('mapWrap').style.display = isMap ? 'block' : 'none';
+    // Grey-out non-pooled states/capitals
+    const poolSet = new Set(state.pool);
+    polygonSeries.mapPolygons.each(p => {
+      const abbr = (p.dataItem.get('id')||'').slice(3);
+      p.setAll({ opacity: poolSet.has(abbr) ? 1 : 0.25, interactive: poolSet.has(abbr) });
+    });
+    pointSeries.bullets.each(b => {
+      const abbr = b.dataItem?.dataContext?.abbr; if(!abbr) return;
+      b.get('sprite').setAll({ opacity: poolSet.has(abbr) ? 1 : 0.2, interactive: poolSet.has(abbr) });
+    });
 
-    const statePaths = gStates.selectAll('path');
-    const capitalDots = gCapitals.selectAll('circle');
-
-    // Reset classes
-    statePaths.attr('class','state');
-    capitalDots.attr('class','capital');
-
-    if(state.kind==='states'){
-      // States mode → states clickable, capitals not
-      statePaths.classed('available', d => state.pool.includes(FIPS_TO_ABBR[String(d.id).padStart(2,'0')]))
-        .on('click', (event, d) => {
-          if(!isMap) return; // ignore when not in map mode
-          const abbr = FIPS_TO_ABBR[String(d.id).padStart(2,'0')];
-          if(!state.pool.includes(abbr)) return;
-          handleMapClick(abbr, d3.select(event.currentTarget));
-        });
-      capitalDots.classed('available', false).on('click', null);
-    }else{
-      // Capitals mode → capitals clickable, states not
-      capitalDots.classed('available', d => state.pool.includes(d.abbr))
-        .on('click', (event, d) => {
-          if(!isMap) return; // ignore when not in map mode
-          const abbr = d.abbr;
-          if(!state.pool.includes(abbr)) return;
-          handleMapClick(abbr, d3.select(event.currentTarget));
-        });
-      statePaths.classed('available', false).on('click', null);
-    }
-
-    // Show/hide capitals layer visibility depending on mode
-    gCapitals.attr('display', state.kind==='capitals' ? null : 'none');
-  }
-
-  function handleMapClick(clickedAbbr, selection){
-    state.attempts++;
-    const target = currentItem();
-    if(clickedAbbr === target.abbr){
-      state.correct++;
-      els.msg.textContent = 'Correct!'; els.msg.className = 'msg good';
-      selection.classed('correct', true);
-      nextQuestion();
-    } else {
-      els.msg.textContent = 'Incorrect, try again.'; els.msg.className = 'msg bad';
-      selection.classed('wrong', true);
-      setTimeout(()=> selection.classed('wrong', false), 700);
-    }
-    setScore();
-  }
-
-  function nextQuestion(){
-    state.idx++;
-    if(state.idx >= state.order.length){
-      // Finished
-      els.prompt.textContent = `Great job! You finished ${state.kind==='states'? 'States':'Capitals'} — ${state.mode==='map'?'Map':'Multiple‑Choice'} mode.`;
-      els.msg.textContent = '';
-      state.idx = 0; // loop
-      state.order = shuffle([...state.pool]);
-      return;
-    }
-    updatePrompt();
-    if(state.mode==='mcq') renderMCQ();
+    document.getElementById('mapWrap').style.display = state.mode==='map' ? 'block' : 'none';
   }
 
   // ---------------------------- Multiple Choice
